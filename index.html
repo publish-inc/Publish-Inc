@@ -1138,9 +1138,9 @@
                 }
 
                 // Cek Routing (dari GAS Server variables)
-                if (typeof ROUTE_VIEW !== 'undefined' && ROUTE_VIEW !== '') {
+                if (typeof ROUTE_VIEW !== 'undefined' && ROUTE_VIEW !== '' && !ROUTE_VIEW.startsWith('<?=')) {
                     this.state.view = ROUTE_VIEW;
-                    if (ROUTE_VIEW === 'detail' && typeof ROUTE_ID !== 'undefined' && ROUTE_ID !== '') {
+                    if (ROUTE_VIEW === 'detail' && typeof ROUTE_ID !== 'undefined' && ROUTE_ID !== '' && !ROUTE_ID.startsWith('<?=')) {
                         this.state.activeBookId = ROUTE_ID;
                     }
                     this.render();
