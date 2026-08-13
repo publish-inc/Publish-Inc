@@ -411,7 +411,7 @@
                             </div>
                             
                             <div class="grid grid-cols-2 gap-2">
-                                <a href="${book.shortLink ? book.shortLink : (typeof SCRIPT_URL !== 'undefined' && SCRIPT_URL ? SCRIPT_URL + '?view=detail&id=' + book.id : '#')}" ${book.shortLink || (typeof SCRIPT_URL !== 'undefined' && SCRIPT_URL) ? 'target="_blank"' : `onclick="app.navigate('detail', '${book.id}'); return false;"`} class="block w-full py-2 px-3 border border-gray-300 rounded-md text-sm font-medium text-slate-700 hover:bg-gray-50 transition-colors text-center cursor-pointer">
+                                <a href="${typeof google !== 'undefined' && typeof SCRIPT_URL !== 'undefined' && SCRIPT_URL ? SCRIPT_URL + '?view=detail&id=' + book.id : '#/detail/' + book.id}" ${typeof google !== 'undefined' ? 'target="_blank"' : `onclick="app.navigate('detail', '${book.id}'); return false;"`} class="block w-full py-2 px-3 border border-gray-300 rounded-md text-sm font-medium text-slate-700 hover:bg-gray-50 transition-colors text-center cursor-pointer">
                                     Detail
                                 </a>
                                 <button class="w-full py-2 px-3 bg-brand-orange hover:bg-orange-600 text-white rounded-md text-sm font-medium transition-colors text-center shadow-sm">
@@ -1523,7 +1523,11 @@
             copyShortLink(id) {
                 const book = this.state.booksData.find(b => b.id === id);
                 if (book) {
-                    const link = book.shortLink || (window.location.origin + window.location.pathname + '#/detail/' + book.id);
+                    // Selalu gunakan hash routing SPA jika diluar environment GAS
+                    const link = typeof google !== 'undefined' && book.shortLink 
+                        ? book.shortLink 
+                        : (window.location.origin + window.location.pathname + '#/detail/' + book.id);
+
                     if (!link) {
                         this.showToast('Gagal menyalin: Link belum tersedia.', 'error');
                         return;
