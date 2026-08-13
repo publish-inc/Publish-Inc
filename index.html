@@ -253,55 +253,55 @@
          */
         const DB = {
             CACHE_KEY: 'publishinc_books_cache',
+            ABOUT_CACHE_KEY: 'publishinc_about_cache',
 
-            async getBooks() {
+            async getBooks(forceNetwork = false) {
                 return new Promise((resolve) => {
-                    if (typeof google !== 'undefined') {
-                        google.script.run
-                            .withSuccessHandler(res => {
-                                if (Array.isArray(res)) {
-                                    this.saveCache(res);
-                                    resolve(res);
-                                } else {
-                                    const cached = this.getCache();
-                                    resolve(cached ? cached : [...MOCK_BOOKS]);
-                                }
-                            })
-                            .withFailureHandler(err => {
-                                const cached = this.getCache();
-                                resolve(cached ? cached : [...MOCK_BOOKS]);
-                            })
-                            .getBooksData();
-                    } else {
-                        callGAS('getBooks').then(res => {
-                            if (res && res.success && Array.isArray(res.data)) {
-                                this.saveCache(res.data);
-                                resolve(res.data);
-                            } else {
-                                const cached = this.getCache();
-                                resolve(cached ? cached : [...MOCK_BOOKS]);
-                            }
-                        }).catch(err => {
-                            const cached = this.getCache();
-                            resolve(cached ? cached : [...MOCK_BOOKS]);
-                        });
-                    }
+                    const cached = this.getCache(this.CACHE_KEY);
+                    
+                    const fetchPromise = (typeof google !== 'undefined') ? 
+                        new Promise(r => google.script.run
+                            .withSuccessHandler(res => r(Array.isArray(res) ? res : null))
+                            .withFailureHandler(() => r(null)).getBooksData()) :
+                        callGAS('getBooks').then(res => res && res.success && Array.isArray(res.data) ? res.data : null).catch(() => null);
+
+                    fetchPromise.then(data => {
+                        if (data) {
+                            this.saveCache(this.CACHE_KEY, data);
+                            if (!cached || forceNetwork) resolve(data);
+                            // Memicu re-render jika data network sudah siap tapi halaman sudah load duluan pakai cache
+                            else window.dispatchEvent(new CustomEvent('books-updated', { detail: data }));
+                        } else {
+                            if (!cached) resolve([...MOCK_BOOKS]);
+                        }
+                    });
+
+                    // Jika ada cache, langsung resolve tanpa menunggu network! (Ultra-fast loading)
+                    if (cached && !forceNetwork) resolve(cached);
                 });
             },
 
-            async getAbout() {
+            async getAbout(forceNetwork = false) {
                 return new Promise((resolve) => {
-                    if (typeof google !== 'undefined') {
-                        google.script.run
-                            .withSuccessHandler(res => resolve(res))
-                            .withFailureHandler(err => resolve({ tentang: 'Error', visi: '', misi: '' }))
-                            .getAboutData();
-                    } else {
-                        callGAS('getAbout').then(res => {
-                            if (res && res.success) resolve(res.data);
-                            else resolve({ tentang: 'Error', visi: '', misi: '' });
-                        }).catch(err => resolve({ tentang: 'Error', visi: '', misi: '' }));
-                    }
+                    const cached = this.getCache(this.ABOUT_CACHE_KEY);
+                    
+                    const fetchPromise = (typeof google !== 'undefined') ? 
+                        new Promise(r => google.script.run
+                            .withSuccessHandler(res => r(res))
+                            .withFailureHandler(() => r(null)).getAboutData()) :
+                        callGAS('getAbout').then(res => res && res.success ? res.data : null).catch(() => null);
+
+                    fetchPromise.then(data => {
+                        if (data) {
+                            this.saveCache(this.ABOUT_CACHE_KEY, data);
+                            if (!cached || forceNetwork) resolve(data);
+                            else window.dispatchEvent(new CustomEvent('about-updated', { detail: data }));
+                        } else {
+                            if (!cached) resolve({ tentang: 'Koneksi gagal', visi: '', misi: '' });
+                        }
+                    });
+
+                    if (cached && !forceNetwork) resolve(cached);
                 });
             },
 
@@ -335,9 +335,9 @@
                 });
             },
 
-            saveCache(data) {
+            saveCache(key, data) {
                 try {
-                    localStorage.setItem(this.CACHE_KEY, JSON.stringify({
+                    localStorage.setItem(key, JSON.stringify({
                         timestamp: new Date().getTime(),
                         data: data
                     }));
@@ -346,9 +346,9 @@
                 }
             },
 
-            getCache() {
+            getCache(key) {
                 try {
-                    const cached = localStorage.getItem(this.CACHE_KEY);
+                    const cached = localStorage.getItem(key);
                     if (cached) {
                         const parsed = JSON.parse(cached);
                         console.log("Data dipulihkan dari cache (Umur:", Math.round((new Date().getTime() - parsed.timestamp) / 60000), "menit)");
@@ -357,7 +357,7 @@
                 } catch (e) {
                     console.error("Gagal membaca cache", e);
                 }
-                return []; // Fallback terakhir jika semua gagal
+                return null; 
             }
         };
 
@@ -1126,7 +1126,19 @@
                 // Tampilkan loading state sederhana (opsional)
                 this.rootEl.innerHTML = '<div class="flex justify-center items-center h-64 w-full"><div class="animate-pulse text-gray-500 font-medium">Memuat data katalog...</div></div>';
 
-                // Ambil data melalui Database Manager
+                // Setup listener untuk auto-update saat background fetch selesai
+                window.addEventListener('books-updated', (e) => {
+                    this.state.booksData = e.detail;
+                    this.render(); // Re-render halus di background
+                });
+                
+                window.addEventListener('about-updated', (e) => {
+                    this.state.aboutData = e.detail;
+                    // Hanya re-render jika sedang ada di view yang menggunakan aboutData
+                    if (['about', 'contact', 'home'].includes(this.state.view)) this.render();
+                });
+
+                // Ambil data melalui Database Manager (Sekarang akan sangat cepat karena pakai Cache-First)
                 const [books, about] = await Promise.all([DB.getBooks(), DB.getAbout()]);
                 this.state.booksData = books;
                 this.state.aboutData = about;
