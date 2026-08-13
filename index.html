@@ -15,8 +15,11 @@
             return fetch(GAS_API_URL, {
                 method: 'POST',
                 body: JSON.stringify({ action: action, data: data }),
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' }
-            }).then(res => res.json());
+                headers: { 'Content-Type': 'text/plain' }
+            }).then(res => res.json()).catch(err => {
+                console.error("callGAS Error (" + action + "):", err);
+                throw err;
+            });
         }
 
         // Data routing dari server Google Apps Script (Code.gs)
