@@ -270,8 +270,18 @@
                             })
                             .getBooksData();
                     } else {
-                        const cached = this.getCache();
-                        resolve(cached ? cached : [...MOCK_BOOKS]);
+                        callGAS('getBooks').then(res => {
+                            if (res && res.success && Array.isArray(res.data)) {
+                                this.saveCache(res.data);
+                                resolve(res.data);
+                            } else {
+                                const cached = this.getCache();
+                                resolve(cached ? cached : [...MOCK_BOOKS]);
+                            }
+                        }).catch(err => {
+                            const cached = this.getCache();
+                            resolve(cached ? cached : [...MOCK_BOOKS]);
+                        });
                     }
                 });
             },
@@ -284,7 +294,10 @@
                             .withFailureHandler(err => resolve({ tentang: 'Error', visi: '', misi: '' }))
                             .getAboutData();
                     } else {
-                        resolve({ tentang: 'Mock tentang', visi: 'Mock visi', misi: 'Mock misi' });
+                        callGAS('getAbout').then(res => {
+                            if (res && res.success) resolve(res.data);
+                            else resolve({ tentang: 'Error', visi: '', misi: '' });
+                        }).catch(err => resolve({ tentang: 'Error', visi: '', misi: '' }));
                     }
                 });
             },
@@ -297,7 +310,9 @@
                             .withFailureHandler(err => resolve({ success: false, error: err }))
                             .sendMessage(data);
                     } else {
-                        resolve({ success: true });
+                        callGAS('sendMessage', data).then(res => {
+                            resolve(res);
+                        }).catch(err => resolve({ success: false, error: err }));
                     }
                 });
             },
@@ -310,7 +325,9 @@
                             .withFailureHandler(err => resolve([]))
                             .getMessages(token);
                     } else {
-                        resolve([]);
+                        callGAS('getMessages', { token: token }).then(res => {
+                            resolve(res && res.success ? res.data : []);
+                        }).catch(err => resolve([]));
                     }
                 });
             },
@@ -1268,6 +1285,25 @@
                             btn.disabled = false;
                         })
                         .verifyAdminLogin(user, pass);
+                } else {
+                    callGAS('verifyAdminLogin', { username: user, password: pass }).then(res => {
+                        if (res && res.success && res.data && res.data.success) {
+                            this.state.isAdmin = true;
+                            sessionStorage.setItem('publishinc_admin_token', res.data.token);
+                            this.updateAuthUI();
+                            this.navigate('adminDashboard');
+                        } else {
+                            errDiv.textContent = (res && res.data && res.data.error) ? res.data.error : 'Login gagal';
+                            errDiv.classList.remove('hidden');
+                            btn.textContent = 'Masuk';
+                            btn.disabled = false;
+                        }
+                    }).catch(err => {
+                        errDiv.textContent = 'Koneksi gagal';
+                        errDiv.classList.remove('hidden');
+                        btn.textContent = 'Masuk';
+                        btn.disabled = false;
+                    });
                 }
             },
 
@@ -1420,6 +1456,26 @@
                             this.showToast("Koneksi gagal: " + err, "error");
                         })
                         .saveBookToSheet(bookData, token);
+                } else {
+                    callGAS('saveBook', { bookData: bookData, token: token }).then(res => {
+                        btn.textContent = 'Simpan';
+                        btn.disabled = false;
+                        if (res && res.success && res.data && res.data.success) {
+                            this.closeBookModal();
+                            DB.getBooks().then(data => {
+                                this.state.booksData = data;
+                                this.showToast("Buku berhasil disimpan!", "success");
+                                this.render();
+                            });
+                        } else {
+                            this.showToast("Gagal menyimpan: " + ((res && res.data && res.data.error) ? res.data.error : 'Error'), "error");
+                            this.render();
+                        }
+                    }).catch(err => {
+                        btn.textContent = 'Simpan';
+                        btn.disabled = false;
+                        this.showToast("Koneksi gagal: " + err, "error");
+                    });
                 }
             },
 
@@ -1439,7 +1495,24 @@
                                     this.showToast("Gagal menghapus: " + res.error, "error");
                                 }
                             })
+                            .withFailureHandler((err) => {
+                                this.showToast("Koneksi gagal: " + err, "error");
+                            })
                             .deleteBookFromSheet(id, token);
+                    } else {
+                        callGAS('deleteBook', { id: id, token: token }).then(res => {
+                            if (res && res.success && res.data && res.data.success) {
+                                this.showToast("Buku berhasil dihapus!", "success");
+                                DB.getBooks().then(data => {
+                                    this.state.booksData = data;
+                                    this.render();
+                                });
+                            } else {
+                                this.showToast("Gagal menghapus: " + ((res && res.data && res.data.error) ? res.data.error : 'Error'), "error");
+                            }
+                        }).catch(err => {
+                            this.showToast("Koneksi gagal: " + err, "error");
+                        });
                     }
                 });
             },
@@ -1447,7 +1520,7 @@
             copyShortLink(id) {
                 const book = this.state.booksData.find(b => b.id === id);
                 if (book) {
-                    const link = book.shortLink || (typeof SCRIPT_URL !== 'undefined' && SCRIPT_URL ? SCRIPT_URL + '?view=detail&id=' + book.id : '');
+                    const link = book.shortLink || (window.location.origin + window.location.pathname + '#/detail/' + book.id);
                     if (!link) {
                         this.showToast('Gagal menyalin: Link belum tersedia.', 'error');
                         return;
@@ -1555,12 +1628,24 @@
                         })
                         .saveAboutData(data, token);
                 } else {
-                    this.state.aboutData = data;
-                    this.closeAboutModal();
-                    this.showToast("Data disimpan (Mock)", "success");
-                    btn.textContent = 'Simpan Data';
-                    btn.disabled = false;
-                    this.render();
+                    callGAS('saveAbout', { aboutData: data, token: token }).then(res => {
+                        btn.textContent = 'Simpan Data';
+                        btn.disabled = false;
+                        if (res && res.success && res.data && res.data.success) {
+                            this.state.aboutData = data;
+                            this.closeAboutModal();
+                            this.showToast("Data profil berhasil disimpan!", "success");
+                            if (this.state.view === 'about' || this.state.view === 'contact' || this.state.view === 'home') {
+                                this.render();
+                            }
+                        } else {
+                            this.showToast("Gagal menyimpan: " + ((res && res.data && res.data.error) ? res.data.error : 'Error'), "error");
+                        }
+                    }).catch(err => {
+                        btn.textContent = 'Simpan Data';
+                        btn.disabled = false;
+                        this.showToast("Koneksi gagal: " + err, "error");
+                    });
                 }
             },
 
